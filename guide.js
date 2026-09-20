@@ -112,8 +112,11 @@ window.Guide = (function () {
         <span>${st.title}</span>
         ${st.isDone ? "" : `<button class="btn ghost sm" data-guide="show" data-journey="${st.journey}" data-step="${st.id}">Show me</button>`}
       </div>`).join("");
+    const waiting = window.NUDGES.filter(n => n.when(S)).map(n => `<div class="lp-item"><span class="st" style="border-color:var(--guide);color:var(--guide)">!</span><span><div>${n.title}</div><div class="hint">${typeof n.body === "function" ? n.body(S) : n.body}</div></span><button class="btn guide sm" data-guide="nudge" data-id="${n.id}">${n.cta.label}</button></div>`).join("");
     const planTab = `
       <div class="progress"><i style="width:${p.length ? Math.round(done / p.length * 100) : 0}%"></i></div>
+      ${waiting ? `<div><div class="eyebrow" style="margin:6px 0 2px">Waiting for you</div>${waiting}</div>` : ""}
+      <div class="eyebrow" style="margin:6px 0 2px">Your plan</div>
       <div>${items || `<p class="hint">Pick what you want to do in Settings to get a plan.</p>`}</div>
       <div class="row wrap">
         ${window.TOURS[S.page] ? `<button class="btn secondary sm" data-guide="replay">Replay this page's tour</button>` : ""}
@@ -129,6 +132,7 @@ window.Guide = (function () {
       if (k === "replay") { togglePanel(); startTour(S.page, 0, true); }
       if (k === "tips") { App.act("toggleTips"); }
       if (k === "show") { togglePanel(); showMe(b.dataset.journey, b.dataset.step); }
+      if (k === "nudge") { const n = window.NUDGES.find(x => x.id === b.dataset.id); if (n) { togglePanel(); App.act(n.cta.action, n.cta); } }
     };
   }
   function showMe(journey, stepId) {
@@ -140,7 +144,7 @@ window.Guide = (function () {
   /* ---------- tours ---------- */
   function startTour(page, idx, force) {
     const steps = window.TOURS[page]; if (!steps) return;
-    dismissNudge(false); clearToast(); clearBeacon();
+    displaceNudge(); clearToast(); clearBeacon();
     R.tour = { page, idx: Math.min(idx, steps.length - 1), steps, force };
     renderTour();
   }
@@ -230,6 +234,13 @@ window.Guide = (function () {
       App.act(n.cta.action, n.cta);
     };
     layer().appendChild(el);
+  }
+  // A nudge pushed aside by a tour was never "seen": refund its budget so it returns when the tour ends.
+  function displaceNudge() {
+    if (!R.nudge) return;
+    S.nudgeCount = Math.max(0, S.nudgeCount - 1); S.lastNudgeAt = 0; S.pageEnteredAt = 0;
+    if (R.nudge.once) S.fired = S.fired.filter(id => id !== R.nudge.id);
+    App.save(); R.nudge = null; layer().querySelectorAll(".nudge").forEach(n => n.remove());
   }
   function dismissNudge(remember) {
     if (!R.nudge) return;

@@ -23,7 +23,11 @@ Relay is a WhatsApp Business API platform (a CPaaS). People use it for broadcast
 - Pricing: per conversation, not per message. Marketing ≈ ₹0.78, utility/authentication ≈ ₹0.115. Incoming free. ₹500 free credits to start; a card only matters once credits run out.
 - API: Authorization: Bearer <key>. Key shown once, ₹2,000 spend limit, expires 20 Sep 2027. POST /v1/messages, POST /v1/templates, GET /v1/onboarding (next_steps + hints). Webhook receives replies and delivery receipts; verify with a test ping.
 - Coding agents: "claude mcp add --transport http relay https://mcp.relay.example/v1" for Claude Code; mcp.json for Cursor/Windsurf; "npx relay-cli init". They use the SAME tools you have.
-- Guidance: tips/tours/nudges can be turned off; at most one tip shows at a time.`;
+- Guidance: tips/tours/nudges can be turned off; at most one tip shows at a time. Tours can be replayed from "Show me around" on each page.
+- Embedded Signup (connecting your own number): Facebook login → Business Portfolio → WhatsApp Business Account (WABA) → phone number (new / migrate from another provider with 2FA turned off there / coexistence with the WhatsApp Business app) → OTP → display name (Meta's naming rules; reviewed after signup) → two-step PIN → permissions. Result: number connected immediately; display name under review; business UNVERIFIED → 250 customer conversations/24h.
+- Business verification: one legal document (GST/MSME/Certificate of Incorporation), 1–3 business days → limit becomes 1,000/day; then 10K → 100K → unlimited as volume grows with green quality. Also unlocks requesting the Official Business Account green tick (needs notability).
+- Quality rating (green/yellow/red) per number comes from customer blocks/reports. Low quality for 7 days lowers the limit; templates can be PAUSED for low quality.
+- Template rules Meta enforces: name lowercase_snake; body ≤1024; variables {{1}},{{2}} sequential, not at start/end, not adjacent, each with a sample; header text ≤60 / image / video / document; footer ≤60; ≤10 buttons (≤2 URL, ≤1 phone), quick replies grouped; no shortened URLs; AUTHENTICATION templates use Meta's fixed wording (you pick copy-code vs one-tap and expiry). Meta may reclassify UTILITY with promotional words as MARKETING. Each language is a separate template.`;
 
   function stateSummary() {
     const s = S(); const plan = Guide.plan(); const nx = Guide.next();
@@ -37,13 +41,16 @@ Relay is a WhatsApp Business API platform (a CPaaS). People use it for broadcast
       bot: s.bot ? { starter: s.bot.id, tested: s.bot.tested, published: s.bot.published } : null,
       team: s.team.map(t => t.email), hours_set: !!s.hours, webhook: s.webhook.url ? (s.webhook.pinged ? `verified (${s.webhook.url})` : `set, unverified (${s.webhook.url})`) : "not set",
       tips_on: !s.tipsOff,
+      waba: s.waba ? { business_verification: s.waba.businessVerification, official_business_account: s.waba.oba } : null,
+      numbers: s.numbers.map(n => ({ phone: n.phone, display_name: n.displayName, display_name_status: n.displayNameStatus, reason: n.displayNameReason || undefined, quality: n.quality, messaging_limit: WA.TIERS[WA.tierFor(s, n)].label })),
+      rejected_templates: s.templates.filter(t => t.status === "rejected").map(t => ({ name: t.name, reason: t.rejectionReason, fix: WA.fixFor(t.rejectionReason) })),
       plan: plan.map(p => ({ id: `${p.journey}.${p.id}`, title: p.title, page: p.page, done: p.isDone })),
       next_step: nx ? `${nx.journey}.${nx.id}` : null,
     };
   }
 
   /* ---------- navigation & guidance actions ---------- */
-  const PAGES = ["home", "inbox", "broadcasts", "bots", "contacts", "templates", "api", "settings"];
+  const PAGES = ["home", "inbox", "broadcasts", "bots", "contacts", "templates", "api", "settings", "numbers"];
   const nav = {
     goTo(target) {
       target = String(target || "").toLowerCase();
@@ -72,7 +79,11 @@ Relay is a WhatsApp Business API platform (a CPaaS). People use it for broadcast
     { name: "assign_conversation", description: "Assign the inbox conversation to 'me' or a teammate email.", inputSchema: { type: "object", properties: { assignee: { type: "string" } }, required: ["assignee"] }, execute: i => W().assign_conversation(i) },
     { name: "set_webhook", description: "Set the webhook URL and verify it with a test ping.", inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] }, execute: i => W().set_webhook(i) },
     { name: "bot", description: "Bot actions: action=pick (starter: faq|lead|order), test (text), publish.", inputSchema: { type: "object", properties: { action: { type: "string" }, starter: { type: "string" }, text: { type: "string" } }, required: ["action"] }, execute: i => i.action === "pick" ? W().pick_bot(i) : i.action === "test" ? W().test_bot(i) : W().publish_bot() },
-    { name: "connect_number", description: "Start connecting the person's own WhatsApp number. With a number: submits to Meta (only after they confirm they have the prerequisites). Without: opens the checklist.", inputSchema: { type: "object", properties: { number: { type: "string" } } }, execute: i => W().connect_number(i) },
+    { name: "connect_number", description: "Connect the person's own WhatsApp number via Embedded Signup. With number (+ optional display_name): completes signup (only after they confirm they have a number not on WhatsApp and a Facebook business login). Without: opens the guided signup.", inputSchema: { type: "object", properties: { number: { type: "string" }, display_name: { type: "string" } } }, execute: i => W().connect_number(i) },
+    { name: "verify_business", description: "Submit business verification to Meta (legal_name, document type). Lifts the 250/day limit to 1,000 after review.", inputSchema: { type: "object", properties: { legal_name: { type: "string" }, document: { type: "string" } } }, execute: i => W().verify_business(i) },
+    { name: "set_display_name", description: "Change the display name of the connected number (validated against Meta's rules; goes to review).", inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] }, execute: i => W().set_display_name(i) },
+    { name: "get_waba", description: "Read the WhatsApp Business Account: verification, numbers, display-name status, quality, messaging limits.", execute: () => W().get_waba() },
+    { name: "review_template", description: "Fetch a template's review result (status, rejection reason, fix). In this prototype also triggers the review if still pending.", inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] }, execute: i => W().review_template(i) },
     { name: "set_tips", description: "Turn tips, tours and nudges on or off.", inputSchema: { type: "object", properties: { on: { type: "boolean" } }, required: ["on"] }, execute: i => nav.setTips(!!i.on) },
   ];
 
@@ -139,6 +150,14 @@ ${JSON.stringify(stateSummary())}`;
     for (const p of PAGES) if (new RegExp(`(go to|open|take me to|show)\\s+(the\\s+)?${p}`).test(l)) return run(() => nav.goTo(p), `Opened ${p}.`);
     if (/open the checklist|checklist/.test(l)) return run(() => nav.goTo("number"), "Here's the checklist.");
     if (/take me there/.test(l) && nx) return run(() => nav.goTo(nx.page), `Opened ${nx.page}.`);
+
+    if (/verify (my |the |our )?business|business verification|lift (the )?limit/.test(l)) return run(() => w.verify_business({}), r => r.status === "verified" ? "Your business is already verified." : `Submitted for business verification. ${r.note}`);
+    if ((m = t.match(/(?:change|set|rename)\s+(?:the |my )?display name\s*(?:to|:)\s*["“]?(.+?)["”]?$/i))) return run(() => w.set_display_name({ name: m[1] }), r => `Display name “${r.name}” sent to Meta for review.`);
+    if (/why (was|is) (my |the )?template rejected|rejected template|template (got )?rejected/.test(l)) { const rt = s.templates.filter(x => x.status === "rejected"); return ok(rt.length ? rt.map(x => `“${x.name}”: ${x.rejectionReason}\nFix: ${WA.fixFor(x.rejectionReason)}`).join("\n\n") : "None of your templates are rejected.", rt.length ? ["Open templates"] : []); }
+    if (/messaging limit|how many (messages|conversations)|250|tier|limit/.test(l)) { const n = s.numbers[0]; return ok(n ? `You can start ${WA.TIERS[WA.tierFor(s, n)].label} customer conversations. ${s.waba.businessVerification !== "verified" ? "Verify your business to move to 1K/day — say “verify my business”." : "Keep quality green and send at volume to move up automatically."}` : "On the sandbox there's no limit, but you can only message people who joined it. Your own number starts at 250 conversations/day and grows with verification and quality."); }
+    if (/quality( rating)?/.test(l)) { const n = s.numbers[0]; return ok(n ? `Quality on ${n.phone} is ${n.quality === "unknown" ? "not rated yet — Meta rates after enough sends" : n.quality}. ${n.quality === "yellow" || n.quality === "red" ? "Pause marketing, check opt-ins, add an opt-out." : ""}` : "Quality is rated per number once you have your own. It comes from customer blocks and reports."); }
+    if (/display name|waba|whatsapp business account|embedded sign ?up|green tick|official/.test(l)) return ok(s.waba ? `WABA ${s.waba.id} · business ${s.waba.businessVerification}. ${s.numbers.map(n => `${n.phone}: display name “${n.displayName}” ${n.displayNameStatus}${n.displayNameReason ? " — " + n.displayNameReason : ""}`).join("; ")}. ${s.waba.oba ? "You have the green tick." : s.waba.businessVerification === "verified" ? "You can request the green tick from Numbers & WABA." : "Green tick needs business verification first."}` : "You don't have a WhatsApp Business Account yet — it's created during Embedded Signup when you connect your number. Say “connect my number +91 …” or I'll open the guided flow.", s.waba ? ["Open numbers"] : ["Open the checklist"]);
+    if (/(replay|restart|show me around|start) (the )?tour/.test(l)) { App.act("replayTour"); return ok(`Replaying the walkthrough for ${s.page}.`); }
 
     // questions
     if (/claude code|cursor|mcp|coding agent|windsurf/.test(l)) return s.agentConnected ? ok("Your coding agent is connected and uses the same tools I do — send, templates, inbox.") : run(() => nav.goTo("agent"), "Here's the one-command setup for Claude Code or Cursor. The agent gets the same tools I have.");

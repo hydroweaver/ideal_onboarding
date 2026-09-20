@@ -24,14 +24,20 @@ window.App = (function () {
       sessions: 1, nudgeCount: 0, lastNudgeAt: 0,
       demo: { open: false, fast: true },
       agentLog: [], agentStep: 0,
+      waba: null, numbers: [], signup: WA.emptySignup(), tplDraft: null,
       ui: { codeTab: "curl", panelOpen: false },
     };
+  }
+  function migrate(s) {
+    s.numbers = s.numbers || []; s.waba = s.waba || null; s.signup = s.signup || WA.emptySignup(); s.tplDraft = s.tplDraft || null; s.ui = s.ui || {};
+    s.templates = (s.templates || []).map(t => t.header ? t : Object.assign(WA.emptyTemplate(), t, { status: t.status || "pending" }));
+    return s;
   }
   let S = load() || defaultState();
   function load() {
     try {
       const raw = localStorage.getItem(STORAGE); if (!raw) return null;
-      const s = JSON.parse(raw); s.sessions = (s.sessions || 1) + 1; s.nudgeCount = 0; s.pageEnteredAt = Date.now();
+      const s = migrate(JSON.parse(raw)); s.sessions = (s.sessions || 1) + 1; s.nudgeCount = 0; s.pageEnteredAt = Date.now();
       return s;
     } catch { return null; }
   }
@@ -88,14 +94,18 @@ window.App = (function () {
         ${foot(true, `<button class="btn primary" data-action="go" data-to="workspace" ${S.jtbd.length ? "" : "disabled"}>Next</button>`)}`);
     },
     workspace() {
+      const dev = S.jtbd.includes("api");
       const snip = {
         curl: `curl https://api.relay.example/v1/messages \\\n  -H "Authorization: Bearer ${S.apiKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{ "to": "YOUR_WHATSAPP_NUMBER",\n        "text": "Hi from ${esc(S.profile.company || "Relay")} 👋" }'`,
         node: `const r = await fetch("https://api.relay.example/v1/messages", {\n  method: "POST",\n  headers: { Authorization: "Bearer ${S.apiKey}", "Content-Type": "application/json" },\n  body: JSON.stringify({ to: "YOUR_WHATSAPP_NUMBER", text: "Hi from ${esc(S.profile.company || "Relay")} 👋" }),\n});\nconsole.log(await r.json()); // { id, status: "sent" }`,
         python: `import requests\nr = requests.post("https://api.relay.example/v1/messages",\n    headers={"Authorization": "Bearer ${S.apiKey}"},\n    json={"to": "YOUR_WHATSAPP_NUMBER", "text": "Hi from ${esc(S.profile.company || "Relay")} 👋"})\nprint(r.json())  # {"id": "...", "status": "sent"}`,
       };
+      const setup = S.jtbd.map(k => ({ broadcast: ["📣", "Broadcasts", "a starter template drafted for your industry, ready to submit to Meta"], bot: ["🤖", "Bots", "three working starter bots to pick from"], inbox: ["💬", "Team inbox", "your sandbox conversation is already in it; invite teammates any time"], api: ["⚙️", "API", "a key with a spend limit and code that already sends"] }[k])).map(([i, t, d]) => `<div class="li ok"><span class="st">${i}</span><span><strong>${t}</strong> — ${d}</span></div>`).join("");
       return wizardShell(`
-        <div class="head"><h1><span style="color:var(--ok)">✓</span> Your workspace is ready</h1><p>A workspace keeps your keys, usage and billing in one place. We made <strong>${esc(S.profile.company || "yours")}</strong> and gave it a sandbox number so you can send right now.</p></div>
+        <div class="head"><h1><span style="color:var(--ok)">✓</span> Your workspace is ready</h1><p>We made <strong>${esc(S.profile.company || "your workspace")}</strong> and gave it a <strong>sandbox WhatsApp number</strong> so you can send right now, before any paperwork.</p></div>
         <div class="stack">
+          <div><div class="eyebrow" style="margin-bottom:8px">Set up for you</div><div class="summary"><div class="li ok"><span class="st">📱</span><span><strong>Sandbox number</strong> ${SANDBOX.number} — message yourself and your team while the Meta paperwork happens later</span></div>${setup}</div></div>
+          ${dev ? `
           <div>
             <label>Your API key</label>
             <div class="keybox"><span class="grow">${S.apiKey}</span><button class="btn secondary sm" data-action="copyKey">${S.keyCopied ? "Copied ✓" : "Copy"}</button></div>
@@ -108,7 +118,7 @@ window.App = (function () {
               <pre>${esc(snip[S.ui.codeTab])}</pre>
             </div>
             <p class="hint" style="margin-top:6px">Sends from the sandbox number to any phone that has joined it — you'll do that next.</p>
-          </div>
+          </div>` : `<p class="hint">Building with code, or have a developer? Your API key and code samples live under <strong>API</strong> in the sidebar — nothing to do now.</p>`}
         </div>
         ${foot(true, `<button class="btn primary" data-action="go" data-to="first">Continue</button>`)}`);
     },
@@ -157,34 +167,6 @@ window.App = (function () {
           ${S.agentConnected ? `<div class="callout ok">Agent connected — it can now send from your sandbox number.</div>` : ""}
         </div>
         ${foot(true, `<button class="btn primary" data-action="agentDone">${S.agentConnected ? "Continue" : "I've connected it"}</button>`, S.agentConnected ? null : { label: "Skip for now", action: "goAgentSkip" })}`, { optional: true });
-    },
-    number() {
-      const c = S.meta.checklist; const ready = c.notOnWa && c.bm && c.doc;
-      const items = [
-        ["notOnWa", "A phone number that is not on WhatsApp right now", "A number currently on WhatsApp or WhatsApp Business must be deleted from the app first."],
-        ["bm", "Admin access to your Facebook Business Manager", "If you don't have one, Meta creates it during signup — you just need a Facebook login."],
-        ["doc", "One legal document: GST, MSME or Certificate of Incorporation", "Any one is fine. Meta uses it to verify the business name."],
-      ].map(([k, t, d]) => `<button type="button" class="check ${c[k] ? "on" : ""}" data-action="checkItem" data-key="${k}"><span class="box"></span><span><div class="t">${t}</div><div class="d">${d}</div></span></button>`).join("");
-      let body;
-      if (S.meta.status === "pending") body = `<div class="meta-sim"><div class="mh"><span class="fb">f</span> Submitted to Meta</div><p class="small">Your number <strong>${esc(S.meta.number)}</strong> is being reviewed. This usually takes a few hours — we'll message you on WhatsApp the moment it's live. Until then everything keeps working on the sandbox.</p></div>`;
-      else if (S.meta.status === "live") body = `<div class="callout ok">Your number ${esc(S.meta.number)} is live.</div>`;
-      else if (S.meta.embedded) body = `<div class="meta-sim">
-          <div class="mh"><span class="fb">f</span> Meta Embedded Signup <span class="muted small">(simulated)</span></div>
-          <form data-form="embedded" class="stack">
-            <div class="field"><label>Business name</label><input type="text" name="biz" value="${esc(S.profile.company)}" required></div>
-            <div class="field"><label>WhatsApp number to connect</label><input type="tel" name="number" placeholder="+91 98765 43210" required></div>
-            <div class="field"><label>Display name customers see</label><input type="text" name="display" value="${esc(S.profile.company)}" required></div>
-            <div class="row"><button class="btn primary" type="submit">Verify with OTP & submit</button><button type="button" class="btn ghost" data-action="cancelEmbedded">Cancel</button></div>
-          </form></div>`;
-      else body = `<div class="check-list">${items}</div>
-        <p class="hint" style="margin-top:12px">${ready ? "You have everything. Signup takes about 3 minutes." : "Not all there yet? No problem — keep using the sandbox and connect later from Your plan."}</p>`;
-      return wizardShell(`
-        <div class="head"><h1>Connect your own number</h1><p>The sandbox is for you. Real customers need messages from <em>your</em> number, which Meta has to approve. Here's what you need before starting.</p></div>
-        ${body}
-        ${foot(true,
-          S.meta.status !== "none" ? `<button class="btn primary" data-action="go" data-to="billing">Continue</button>`
-          : S.meta.embedded ? "" : ready ? `<button class="btn primary" data-action="startEmbedded">Start Embedded Signup</button>` : `<button class="btn primary" data-action="remindNumber">Keep using sandbox for now</button>`,
-          S.meta.status === "none" && !S.meta.embedded && ready ? { label: "Not now — keep using sandbox", action: "remindNumber" } : null)}`, { optional: true });
     },
     billing() {
       const bonus = [["star", "Star the open-source SDK", 50], ["community", "Join the community", 25]];
@@ -254,12 +236,13 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
       <nav class="sidenav">
         <div class="brand"><span class="brandmark">R</span><div>Relay<span class="ws">${esc(S.profile.company || "Workspace")}</span></div></div>
         ${mods.map(navLink).join("")}
-        <details class="more"><summary>More</summary>${MORE_MODULES.map(navLink).join("")}</details>
+        <details class="more"><summary>More</summary>${MORE_MODULES.filter(m => !mods.some(x => x.id === m.id)).map(navLink).join("")}</details>
         <div class="numstat"><div class="eyebrow">Sending from</div>${num}<div class="muted tabular">₹${S.billing.credits} credits left</div></div>
       </nav>
       <div class="main">${inner}</div>
     </div>`;
   }
+  function tourBtn() { return TOURS[S.page] ? `<button class="btn ghost sm" data-action="replayTour" title="Replay the walkthrough for this page">? Show me around</button>` : ""; }
   const pages = {
     home() {
       const p = Guide.plan(); const nx = Guide.next(); const done = p.filter(x => x.isDone).length;
@@ -296,24 +279,10 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
     contacts() {
       const rows = S.contacts.map(c => `<tr><td>${esc(c.name)}</td><td class="mono">${esc(c.phone)}</td><td><span class="pill ${c.joined ? "ok" : ""}">${c.joined ? "in sandbox" : "customer"}</span></td></tr>`).join("");
       return appShell(`
-        <div class="ph"><div><h1>Contacts</h1><p>${S.contacts.length ? `${S.contacts.length} contact${S.contacts.length > 1 ? "s" : ""}.` : "Who you'll message. Start with yourself."}</p></div><button class="btn secondary" data-action="importCsv" data-tour="import">Import CSV</button></div>
+        <div class="ph"><div><h1>Contacts</h1><p>${S.contacts.length ? `${S.contacts.length} contact${S.contacts.length > 1 ? "s" : ""}.` : "Who you'll message. Start with yourself."}</p></div>${tourBtn()}<button class="btn secondary" data-action="importCsv" data-tour="import">Import CSV</button></div>
         <div class="panel" data-tour="paste"><h3>Add contacts</h3>
           <form data-form="contacts" class="stack"><textarea name="raw" rows="3" placeholder="One per line, e.g.&#10;Priya, +91 98765 43210&#10;+91 91234 56789"></textarea><div class="row"><button class="btn primary" type="submit">Add</button><button type="button" class="btn ghost" data-action="seedContacts">Add 3 sample contacts</button></div></form></div>
         ${S.contacts.length ? `<div class="panel"><table class="table"><thead><tr><th>Name</th><th>Phone</th><th>Source</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="panel empty"><div class="big">👥</div><h3>No contacts yet</h3><p>Paste a number above — your own is the best first one, so you see exactly what customers will.</p></div>`}`);
-    },
-    templates() {
-      const draft = STARTERS.templateFor(S.profile.industry, S.profile.company);
-      const rows = S.templates.map(t => `<tr><td class="mono">${esc(t.name)}</td><td>${esc(t.category)}</td><td data-tour="status">${pillFor(t.status)}</td><td>${t.status === "pending" ? `<button class="btn ghost sm" data-action="approveTemplate" data-name="${esc(t.name)}">Prototype: approve</button>` : ""}</td></tr>`).join("");
-      return appShell(`
-        <div class="ph"><div><h1>Templates</h1><p>Approved templates let you start conversations. Meta reviews each one.</p></div></div>
-        <div class="panel" data-tour="new"><h3>New template</h3>
-          <form data-form="template" class="form-grid">
-            <div class="field"><label>Name</label><input type="text" name="name" value="${esc(draft.name)}" required></div>
-            <div class="field"><label>Category</label><select name="category">${["MARKETING", "UTILITY", "AUTHENTICATION"].map(c => `<option ${c === draft.category ? "selected" : ""}>${c}</option>`).join("")}</select></div>
-            <div class="field full"><label>Message <span class="muted">— {{1}} etc. are filled per contact</span></label><textarea name="body" rows="3">${esc(draft.body)}</textarea></div>
-            <div class="full row"><button class="btn primary" type="submit">Submit to Meta</button><span class="hint">Usually approved in minutes to a few hours.</span></div>
-          </form></div>
-        ${S.templates.length ? `<div class="panel"><table class="table"><thead><tr><th>Name</th><th>Category</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}`);
     },
     broadcasts() {
       const approved = S.templates.filter(t => t.status === "approved"); const pending = S.templates.filter(t => t.status === "pending");
@@ -322,7 +291,7 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
         : !approved.length ? `<div class="inline-banner">“${esc(pending[0].name)}” is with Meta for approval. You'll get a nudge the moment it's approved. <button class="btn guide sm" data-action="approveTemplate" data-name="${esc(pending[0].name)}">Prototype: approve now</button></div>` : "";
       const rows = S.broadcasts.map(b => `<tr><td>${esc(b.template)}</td><td>${b.test ? "Test · you" : `${b.count} contacts`}</td><td><span class="pill ok">delivered</span></td><td class="tabular muted">${b.read} read</td></tr>`).join("");
       return appShell(`
-        <div class="ph"><div><h1>Broadcasts</h1><p>One template, many people, delivered and read counts as they happen.</p></div></div>
+        <div class="ph"><div><h1>Broadcasts</h1><p>One template, many people, delivered and read counts as they happen.</p></div>${tourBtn()}</div>
         ${banner}
         <div class="panel"><form data-form="broadcast" class="form-grid">
           <div class="field" data-tour="audience"><label>Audience</label><select name="audience"><option value="all">All contacts (${S.contacts.length})</option><option value="sandbox">Only sandbox contacts (${S.contacts.filter(c => c.joined).length})</option></select></div>
@@ -336,7 +305,7 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
       const starters = STARTERS.bots.map(s => `<button class="choice ${b && b.id === s.id ? "on" : ""}" data-action="pickBot" data-id="${s.id}"><span class="row between"><span class="ttl">${s.title}</span><span class="tick"></span></span><span class="sub">${s.sub}</span></button>`).join("");
       const chat = b ? (b.chat || []).map(m => `<div class="bub ${m.out ? "out" : ""}">${esc(m.text)}</div>`).join("") : "";
       return appShell(`
-        <div class="ph"><div><h1>Bots</h1><p>${b ? `${STARTERS.bots.find(s => s.id === b.id).title} · ${b.published ? "published" : "draft"}` : "Answers customers when you can't. Start from one that already works."}</p></div>${b ? `<button class="btn primary" data-action="publishBot" data-tour="publish" ${b.published ? "disabled" : ""}>${b.published ? "Published ✓" : "Publish"}</button>` : `<span data-tour="publish"></span>`}</div>
+        <div class="ph"><div><h1>Bots</h1><p>${b ? `${STARTERS.bots.find(s => s.id === b.id).title} · ${b.published ? "published" : "draft"}` : "Answers customers when you can't. Start from one that already works."}</p></div>${tourBtn()}${b ? `<button class="btn primary" data-action="publishBot" data-tour="publish" ${b.published ? "disabled" : ""}>${b.published ? "Published ✓" : "Publish"}</button>` : `<span data-tour="publish"></span>`}</div>
         <div class="panel" data-tour="starters"><h3>${b ? "Starter" : "Pick a starter"}</h3><div class="starter-grid">${starters}</div></div>
         <div class="panel" data-tour="testchat"><h3>Test it</h3>
           ${b ? `<div class="chatbox">${chat || `<div class="muted small" style="margin:auto">Say something as a customer would.</div>`}</div><form data-form="botchat" class="row" style="margin-top:10px"><input type="text" name="text" placeholder="e.g. what are your hours?"><button class="btn secondary" type="submit">Send</button></form>` : `<p class="hint">Pick a starter first.</p>`}
@@ -345,7 +314,7 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
     inbox() {
       const convos = S.conversations.map(c => `<div class="convo" data-tour="convo"><span class="av">${esc(c.name[0])}</span><div class="grow"><div><strong>${esc(c.name)}</strong></div><div class="small muted">${esc(c.last)}</div></div><select data-action-change="assign" data-id="${c.id}"><option value="">Unassigned</option><option ${c.assignee === "me" ? "selected" : ""} value="me">Me</option>${S.team.map(t => `<option ${c.assignee === t.email ? "selected" : ""} value="${esc(t.email)}">${esc(t.name)}</option>`).join("")}</select></div>`).join("");
       return appShell(`
-        <div class="ph"><div><h1>Inbox</h1><p>Every WhatsApp conversation, shared with your team.</p></div></div>
+        <div class="ph"><div><h1>Inbox</h1><p>Every WhatsApp conversation, shared with your team.</p></div>${tourBtn()}</div>
         <div class="panel"><h3>Conversations</h3><div class="stack">${convos}</div></div>
         <div class="panel" data-tour="invite"><h3>Team</h3>
           ${S.team.length ? `<div class="stack" style="margin-bottom:12px">${S.team.map(t => `<div class="row"><span class="pill accent">${esc(t.name)}</span><span class="small muted">${esc(t.email)} · invited</span></div>`).join("")}</div>` : ""}
@@ -357,7 +326,7 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
     api() {
       const snippet = `curl https://api.relay.example/v1/messages \\\n  -H "Authorization: Bearer ${S.apiKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{ "to": "YOUR_WHATSAPP_NUMBER", "text": "Hello from the API 👋" }'`;
       return appShell(`
-        <div class="ph"><div><h1>API</h1><p>Send from code. Your sandbox number can reach any phone that has joined it.</p></div></div>
+        <div class="ph"><div><h1>API</h1><p>Send from code. Your sandbox number can reach any phone that has joined it.</p></div>${tourBtn()}</div>
         <div class="panel" data-tour="snippet"><h3>Send a message</h3>
           <div class="keybox" style="margin-bottom:10px"><span class="grow">${S.apiKey}</span><span class="pill">₹2,000 limit</span></div>
           <div class="codetabs"><pre>${esc(snippet)}</pre></div>
@@ -388,6 +357,9 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
       workspace: S.profile.company || "workspace",
       sandbox: { number: SANDBOX.number, join_code: SANDBOX.code, connected: S.sandbox.status === "connected" },
       own_number: { status: S.meta.status, number: S.meta.number || null },
+      waba: S.waba ? { id: S.waba.id, business_verification: S.waba.businessVerification, official_business_account: S.waba.oba } : null,
+      numbers: S.numbers.map(n => ({ id: n.id, phone: n.phone, display_name: n.displayName, display_name_status: n.displayNameStatus, status: n.status, quality: n.quality, messaging_limit: WA.TIERS[WA.tierFor(S, n)].label })),
+      templates: S.templates.map(t => ({ name: t.name, language: t.language, category: t.category, status: t.status, rejection_reason: t.rejectionReason || undefined })),
       credits: { remaining_inr: S.billing.credits, payment_method: S.billing.added },
       next_steps: plan.filter(p => !p.isDone).map(p => ({ id: `${p.journey}.${p.id}`, title: p.title, why: p.why, endpoint: endpointFor(p) })),
       hints: NUDGES.filter(n => !n.page && n.when(S) && !S.dismissed.includes(n.id)).map(n => ({ id: n.id, text: `${n.title} — ${typeof n.body === "function" ? n.body(S) : n.body}` })),
@@ -436,11 +408,13 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
     if (S.demo.open) d.innerHTML = `
       <div class="group"><span class="lbl">Jump</span><button class="btn secondary sm" data-action="jumpApp">Skip wizard → app</button><button class="btn secondary sm" data-action="resetDemo">Reset everything</button></div>
       <div class="group"><span class="lbl">Fire triggers</span><button class="btn secondary sm" data-action="demoApprove">Approve template</button><button class="btn secondary sm" data-action="demoLive">Number goes live</button><button class="btn secondary sm" data-action="demoPending">Meta pending</button><button class="btn secondary sm" data-action="demoDrain">Drain credits</button><button class="btn secondary sm" data-action="demoSessions">Pretend 2nd session</button></div>
+      <div class="group"><span class="lbl">WhatsApp</span><button class="btn secondary sm" data-action="demoRejectTemplate">Reject template</button><button class="btn secondary sm" data-action="demoVerify">Verify business</button><button class="btn secondary sm" data-action="demoRejectName">Reject display name</button><button class="btn secondary sm" data-action="demoQualityYellow">Quality → yellow</button><button class="btn secondary sm" data-action="demoTierUp">Tier up</button></div>
       <div class="group"><span class="lbl">Calm budget</span><span class="budget">nudges ${g.budget} · held ${g.held}</span><button class="btn secondary sm" data-action="demoResetBudget">Reset budget</button><label class="toggle ${S.demo.fast ? "on" : ""}" data-action="demoFast" style="margin:0"><span class="sw"></span><span class="small">Fast timers</span></label></div>`;
   }
 
   /* ================= RENDER ================= */
   function render() {
+    Object.assign(S.meta, WA.summarizeMeta(S));
     const root = document.getElementById("root");
     if (S.mode === "agent") root.innerHTML = renderAgent();
     else if (S.screen === "app") root.innerHTML = pages[S.page] ? pages[S.page]() : pages.home();
@@ -473,29 +447,27 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
     agentDone() { S.agentConnected = true; save(); go("number"); },
     goAgentSkip() { go("number"); },
     goAgentFromApp() { S.screen = "agent"; save(); render(); },
-    checkItem(d) { S.meta.checklist[d.key] = !S.meta.checklist[d.key]; save(); render(); },
-    startEmbedded() { S.meta.embedded = true; save(); render(); },
-    cancelEmbedded() { S.meta.embedded = false; save(); render(); },
     remindNumber() { S.meta.remind = true; save(); go("billing"); },
+    replayTour() { Guide.startTour(S.page, 0, true); },
     bonus(d) { if (!S.billing.bonus.includes(d.key)) { S.billing.bonus.push(d.key); const cr = d.key === "star" ? 50 : 25; S.billing.credits += cr; S.billing.creditsTotal += cr; } save(); render(); },
     goDoneSkipBilling() { go("done"); },
     source(d) { S.source = d.v; save(); render(); },
     enterApp() { S.screen = "app"; S.page = "home"; S.pageEnteredAt = Date.now(); save(); render(); scrollTo(0, 0); },
     nav(d) { if (S.screen !== "app") { S.screen = "app"; } nav(d.page); },
     showMe(d) { const st = JOURNEYS[d.journey].steps.find(s => s.id === d.step); nav(st.page); requestAnimationFrame(() => Guide.startTour(st.page, st.tourStep || 0, true)); },
-    openNumber() { S.screen = "number"; S.meta.embedded = false; save(); render(); scrollTo(0, 0); },
+    openNumber() { S.screen = "number"; if (S.signup.step >= WA.ES_STEPS.length - 1) S.signup = WA.emptySignup(); save(); render(); scrollTo(0, 0); },
     toggleTips() { S.tipsOff = !S.tipsOff; save(); Guide.resetRuntime(); render(); },
     resetTours() { S.toursDone = []; S.seen = []; save(); render(); Guide.toast("Tours will play again on each page"); },
     addCardQuick() { S.billing.added = true; save(); render(); completeToast("Payment method saved"); },
     // journey "do it for me"
     seedContacts() { const seed = [{ name: "You", phone: "+91 98••• ••210", joined: S.sandbox.status === "connected" }, { name: "Priya Nair", phone: "+91 91234 56789", joined: false }, { name: "Rahul Mehta", phone: "+91 99887 76655", joined: false }]; seed.forEach(c => { if (!S.contacts.some(x => x.name === c.name)) S.contacts.push(c); }); save(); afterStep("Contacts added"); },
-    seedTemplate() { const t = STARTERS.templateFor(S.profile.industry, S.profile.company); submitTemplate(t); },
-    seedOtpTemplate() { submitTemplate(STARTERS.otpTemplate); },
+    seedTemplate() { submitTemplate(WA.starter(S.profile.industry, S.profile.company)); },
+    seedOtpTemplate() { submitTemplate(WA.OTP_STARTER()); },
     seedBot() { act.pickBot({ id: "faq" }); },
     seedTeam() { if (!S.team.length) S.team.push({ name: "Aisha", email: "aisha@" + (S.profile.email.split("@")[1] || "company.com") }); save(); afterStep("Invite sent to Aisha"); },
     seedHours() { S.hours = { hours: "Mon–Sat, 10:00–19:00 IST", away: `Thanks for messaging ${S.profile.company || "us"}! We'll reply when we're back.` }; save(); afterStep("Hours and away message saved"); },
     importCsv() { act.seedContacts(); },
-    approveTemplate(d) { const t = S.templates.find(x => x.name === d.name); if (t) { t.status = "approved"; save(); render(); } },
+    approveTemplate(d) { const t = S.templates.find(x => x.name === d.name); if (t) { t.status = "approved"; t.quality = "green"; t.rejectionReason = null; save(); render(); } },
     sendTest() { const t = S.templates.find(x => x.status === "approved"); if (!t) return; S.broadcasts.push({ template: t.name, test: true, count: 1, read: 1 }); save(); afterStep("Test delivered to your phone"); },
     pickBot(d) { S.bot = { id: d.id, tested: false, published: false, chat: [] }; save(); afterStep("Starter bot loaded — now test it"); },
     publishBot() { if (S.bot) { S.bot.published = true; save(); afterStep("Bot published"); } },
@@ -507,9 +479,10 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
     demoFast() { S.demo.fast = !S.demo.fast; save(); renderProtoBar(); },
     jumpApp() { if (!S.jtbd.length) S.jtbd = ["broadcast", "api"]; if (!S.profile.email) { S.profile.email = "karan@acme.in"; S.profile.website = "acme.in"; act.deriveCompany(); } if (S.sandbox.status !== "connected") { S.sandbox.status = "connected"; S.contacts.unshift({ name: "You", phone: "+91 98••• ••210", joined: true }); } S.screen = "app"; S.mode = "human"; S.page = "home"; S.pageEnteredAt = Date.now(); save(); render(); },
     resetDemo() { try { localStorage.removeItem(STORAGE); } catch {} S = defaultState(); S.demo.open = true; Guide.resetRuntime(); render(); },
-    demoApprove() { let t = S.templates.find(x => x.status === "pending"); if (!t) { t = { ...STARTERS.templateFor(S.profile.industry, S.profile.company), status: "pending" }; if (!S.templates.some(x => x.name === t.name)) S.templates.push(t); else t = S.templates.find(x => x.name === t.name); } t.status = "approved"; save(); render(); },
-    demoLive() { S.meta.status = "live"; S.meta.number = S.meta.number || "+91 98765 43210"; save(); render(); },
-    demoPending() { S.meta.status = "pending"; S.meta.number = S.meta.number || "+91 98765 43210"; save(); render(); },
+    demoApprove() { let t = S.templates.find(x => x.status === "pending"); if (!t) { const st = WA.starter(S.profile.industry, S.profile.company); t = S.templates.find(x => x.name === st.name); if (!t) { t = Object.assign(st, { status: "pending" }); S.templates.push(t); } } t.status = "approved"; t.quality = "green"; t.rejectionReason = null; save(); render(); },
+    demoRejectTemplate() { let t = S.templates.find(x => x.status === "pending") || S.templates[0]; if (!t) { t = Object.assign(WA.starter(S.profile.industry, S.profile.company), { status: "pending" }); S.templates.push(t); } t.status = "rejected"; t.rejectionReason = "TAG_CONTENT_MISMATCH: too many variables for too little fixed content — the meaning of the message isn't clear from the template."; save(); render(); },
+    demoLive() { if (!S.numbers.length) WAUI.quickConnect({}); else { S.numbers[0].status = "connected"; S.numbers[0].registered = true; } if (S.screen === "number") S.screen = "app"; save(); render(); },
+    demoPending() { if (!S.numbers.length) WAUI.quickConnect({}); S.numbers[0].displayNameStatus = "pending"; if (S.waba) S.waba.businessVerification = "unverified"; if (S.screen === "number") S.screen = "app"; save(); render(); },
     demoDrain() { S.billing.credits = Math.round(S.billing.creditsTotal * 0.12); save(); render(); },
     demoSessions() { S.sessions = 2; S.pageEnteredAt = 0; save(); render(); },
     demoResetBudget() { S.nudgeCount = 0; S.lastNudgeAt = 0; S.pageEnteredAt = 0; S.dismissed = []; save(); render(); },
@@ -518,9 +491,12 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
     agentReset() { S.agentLog = []; S.agentStep = 0; save(); render(); },
   };
   function submitTemplate(t) {
-    if (S.templates.some(x => x.name === t.name)) { nav("templates"); return; }
-    S.templates.push({ ...t, status: "pending" }); save(); afterStep(`“${t.name}” submitted to Meta`);
-    setTimeout(() => { const x = S.templates.find(y => y.name === t.name); if (x && x.status === "pending") { x.status = "approved"; save(); render(); } }, S.demo.fast ? 9000 : 90000);
+    t = t.header ? t : Object.assign(WA.emptyTemplate(), t);
+    if (S.templates.some(x => x.name === t.name && x.language === t.language && x.status !== "draft" && x.status !== "rejected")) { nav("templates"); return; }
+    S.templates = S.templates.filter(x => !(x.name === t.name && x.language === t.language));
+    t.status = "pending"; t.submittedAt = Date.now(); t.rejectionReason = null; delete t.editingName;
+    S.templates.push(t); save(); if (S.screen === "app") nav("templates"); afterStep(`“${t.name}” submitted to Meta`);
+    setTimeout(() => { const x = S.templates.find(y => y.name === t.name && y.language === t.language); if (x && x.status === "pending") WAUI.applyReview(x); }, S.demo.fast ? 9000 : 90000);
   }
   function afterStep(msg) {
     render();
@@ -532,10 +508,8 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
   const forms = {
     signup(f) { S.profile.email = f.email.value.trim(); S.profile.website = f.website.value.trim(); act.deriveCompany(); save(); go("why"); },
     firstMsg(f) { S.sandbox.messages.push(f.text.value); S.billing.credits -= 0; save(); render(); confetti(); },
-    embedded(f) { S.meta.number = f.number.value.trim(); S.meta.embedded = false; S.meta.status = "pending"; S.profile.company = f.biz.value.trim() || S.profile.company; save(); render(); },
     billing(f) { S.billing.added = true; save(); render(); },
     contacts(f) { const lines = f.raw.value.split("\n").map(l => l.trim()).filter(Boolean); lines.forEach(l => { const [a, b] = l.split(",").map(x => x.trim()); const phone = b || a; const name = b ? a : "Contact " + (S.contacts.length + 1); S.contacts.push({ name, phone, joined: false }); }); if (lines.length) { save(); afterStep(`${lines.length} contact${lines.length > 1 ? "s" : ""} added`); } },
-    template(f) { submitTemplate({ name: f.name.value.trim(), category: f.category.value, body: f.body.value }); },
     broadcast(f) { const n = f.audience.value === "sandbox" ? S.contacts.filter(c => c.joined).length : S.contacts.length; S.broadcasts.push({ template: f.template.value, test: false, count: n, read: Math.max(1, Math.round(n * 0.7)) }); S.billing.credits = Math.max(0, S.billing.credits - n); save(); afterStep(`Broadcast sent to ${n}`); confetti(); },
     botchat(f) { const q = f.text.value.trim(); if (!q || !S.bot) return; S.bot.chat.push({ text: q, out: true }); const a = /hour|open|time/.test(q.toLowerCase()) ? `We're open Mon–Sat, 10am–7pm. Anything else?` : /price|cost|rate/.test(q.toLowerCase()) ? `Pricing starts at ₹499. Want me to send the full list?` : `I'm not sure about that — I've asked a teammate to jump in.`; S.bot.chat.push({ text: a, out: false }); const first = !S.bot.tested; S.bot.tested = true; save(); if (first) afterStep("Bot tested"); else render(); },
     invite(f) { const email = f.email.value.trim(); S.team.push({ name: email.split("@")[0], email }); save(); afterStep(`Invite sent to ${email}`); },
@@ -576,16 +550,23 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
       save(); afterStep(`${list.length} contact${list.length > 1 ? "s" : ""} added`);
       return { added: list.length, total: S.contacts.length };
     },
-    create_template({ name, category, body }) {
-      name = String(name || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_|_$/g, "");
-      category = String(category || "MARKETING").toUpperCase(); body = String(body || "").trim();
-      if (!name || !body) throw new Error("A template needs a name and a body.");
-      if (!["MARKETING", "UTILITY", "AUTHENTICATION"].includes(category)) throw new Error("Category must be MARKETING, UTILITY or AUTHENTICATION.");
-      if (S.templates.some(t => t.name === name)) throw new Error(`A template named "${name}" already exists.`);
-      submitTemplate({ name, category, body });
-      return { name, category, status: "pending", note: "Usually approved in minutes to a few hours." };
+    create_template({ name, category, body, language, header, footer, buttons, samples }) {
+      const t = WA.emptyTemplate();
+      t.name = String(name || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_|_$/g, "");
+      t.category = String(category || "MARKETING").toUpperCase(); t.language = language && WA.LANGUAGES[language] ? language : "en";
+      t.body = String(body || "").trim(); t.footer = String(footer || ""); t.samples = Array.isArray(samples) ? samples.map(String) : [];
+      if (header && typeof header === "object") t.header = { type: header.type || "none", text: header.text || "", sample: header.sample || "" };
+      if (Array.isArray(buttons)) t.buttons = buttons.map(b => ({ type: String(b.type || "QUICK_REPLY").toUpperCase(), text: String(b.text || ""), url: b.url, phone: b.phone, sample: b.sample }));
+      if (t.category === "AUTHENTICATION") t.body = "";
+      WA.variables(t.body).forEach((n, i) => { if (!t.samples[i]) t.samples[i] = ["Priya", "48213", "Tuesday", "₹499"][i] || "value"; });
+      const errs = WA.validateTemplate(t).filter(e => !e.warn);
+      if (errs.length) throw new Error("Meta would reject this: " + errs.map(e => e.msg).join(" "));
+      if (S.templates.some(x => x.name === t.name && x.language === t.language && x.status !== "rejected" && x.status !== "draft")) throw new Error(`A ${t.language} template named "${t.name}" already exists.`);
+      submitTemplate(t);
+      return { name: t.name, language: t.language, category: t.category, status: "pending", note: "Usually approved in minutes to a few hours." };
     },
-    list_templates() { return S.templates.map(t => ({ name: t.name, category: t.category, status: t.status })); },
+    review_template({ name }) { const t = S.templates.find(x => x.name === name); if (!t) throw new Error("No such template."); if (t.status !== "pending") return { name, status: t.status, reason: t.rejectionReason }; WAUI.applyReview(t); return { name, status: t.status, reason: t.rejectionReason || undefined, fix: t.rejectionReason ? WA.fixFor(t.rejectionReason) : undefined }; },
+    list_templates() { return S.templates.map(t => ({ name: t.name, language: t.language, category: t.category, status: t.status, reason: t.rejectionReason || undefined })); },
     send_message({ to, text }) {
       text = String(text || "").trim(); if (!text) throw new Error("Message text is empty.");
       if (S.sandbox.status !== "connected" && S.meta.status !== "live") throw new Error(`sandbox_not_joined: the recipient must send "join ${SANDBOX.code}" to ${SANDBOX.number} first.`);
@@ -638,15 +619,29 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
       const q = String(text || "what are your hours?"); forms.botchat({ text: { value: q } }); return { asked: q, replied: S.bot.chat[S.bot.chat.length - 1].text };
     },
     publish_bot() { if (!S.bot) throw new Error("No bot yet — pick a starter first."); if (!S.bot.tested) throw new Error("Test the bot once before publishing."); act.publishBot(); return { bot: S.bot.id, status: "published" }; },
-    connect_number({ number }) {
-      if (S.meta.status !== "none") return { status: S.meta.status, number: S.meta.number };
-      number = String(number || "").trim(); if (!number) { act.openNumber(); return { status: "opened_checklist", note: "Opened the checklist — a phone number is needed to submit." }; }
-      S.meta.number = number; S.meta.status = "pending"; S.meta.checklist = { notOnWa: true, bm: true, doc: true }; save(); render();
-      return { status: "pending", number, note: "Usually a few hours; the sandbox keeps working meanwhile." };
+    connect_number({ number, display_name }) {
+      if (!number) { act.openNumber(); return { status: "opened_signup", note: "Opened Embedded Signup — a phone number is needed to continue." }; }
+      number = String(number).trim(); if (!/^\+?\d[\d\s-]{8,}\d$/.test(number)) throw new Error("Phone number must include the country code, e.g. +91 98765 43210.");
+      const dn = display_name || S.profile.company || "Relay Store"; const v = WA.validateDisplayName(dn, S.profile.company);
+      if (!v.ok) throw new Error("Display name would be rejected: " + v.errs.join(" "));
+      if (S.numbers.some(n => n.phone === number)) return { status: "already_connected", number };
+      const n = WAUI.quickConnect({ number, displayName: dn }); if (S.screen === "number") S.screen = "app"; save(); render();
+      return { status: "connected", phone_number_id: n.id, waba_id: S.waba.id, display_name_status: "pending", messaging_limit: WA.TIERS[WA.tierFor(S, n)].label, note: "Display name under review. Business is unverified → 250 conversations/day until verified." };
     },
+    verify_business({ legal_name, document }) {
+      if (!S.waba) throw new Error("Connect a number first — verification belongs to the WhatsApp Business Account.");
+      if (S.waba.businessVerification === "verified") return { status: "verified" };
+      S.waba.businessVerification = "pending"; S.waba.businessName = legal_name || S.waba.businessName; S.waba.verificationDoc = document || "GST certificate"; save(); render();
+      setTimeout(() => { if (S.waba && S.waba.businessVerification === "pending") { S.waba.businessVerification = "verified"; S.numbers.forEach(n => n.tier = Math.max(n.tier, 1)); save(); render(); } }, S.demo.fast ? 15000 : 3 * 60000);
+      return { status: "pending", note: "Meta reviews in 1–3 business days. Limit stays 250/day until then." };
+    },
+    set_display_name({ name }) { const n = S.numbers[0]; if (!n) throw new Error("No number connected."); const v = WA.validateDisplayName(name, S.waba.businessName); if (!v.ok) throw new Error("Meta would reject it: " + v.errs.join(" ")); n.displayName = String(name).trim(); n.displayNameStatus = "pending"; n.displayNameReason = null; save(); render(); return { name: n.displayName, status: "pending" }; },
+    update_profile(p) { const n = S.numbers[0]; if (!n) throw new Error("No number connected."); ["about", "description", "address", "email", "website", "vertical"].forEach(k => { if (p[k] != null) n.profile[k] = String(p[k]); }); save(); render(); return n.profile; },
+    get_waba() { if (!S.waba) return { status: "none", note: "Only the sandbox so far." }; return { waba_id: S.waba.id, business: S.waba.businessName, business_verification: S.waba.businessVerification, official_business_account: S.waba.oba, numbers: S.numbers.map(n => ({ phone: n.phone, display_name: n.displayName, display_name_status: n.displayNameStatus, reason: n.displayNameReason || undefined, status: n.status, quality: n.quality, messaging_limit: WA.TIERS[WA.tierFor(S, n)].label, two_step_pin: n.twoStepPin })) }; },
     get_onboarding() { return onboardingJson(); },
   };
 
+  WAUI.install({ S: () => S, esc, wizardShell, foot, appShell, save, render, nav, go, afterStep, submitTemplate, pillFor, toast: m => Guide.toast(m), firstName, tourBtn, screens, pages, act, forms });
   render();
   return { act: (id, d) => act[id] && act[id](d || {}), nav, save, state: () => S, work };
 })();

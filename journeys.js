@@ -18,8 +18,10 @@ window.MODULES = [
   { id: "contacts",   icon: "👥", label: "Contacts",   show: s => s.jtbd.includes("broadcast") || s.jtbd.includes("inbox") || s.contacts.length > 0 },
   { id: "templates",  icon: "📄", label: "Templates",  show: s => s.jtbd.includes("broadcast") || s.jtbd.includes("api") || s.templates.length > 0 || s.meta.status === "live" },
   { id: "api",        icon: "⚙️", label: "API",        show: s => s.jtbd.includes("api") || s.agentConnected },
+  { id: "numbers",    icon: "📱", label: "Numbers & WABA", show: s => s.numbers.length > 0 },
 ];
 window.MORE_MODULES = [
+  { id: "numbers",  icon: "📱", label: "Numbers & WABA" },
   { id: "settings", icon: "⚙", label: "Settings" },
 ];
 
@@ -94,8 +96,14 @@ window.TOURS = {
     { sel: "[data-tour='import']", title: "Or import a CSV",    body: "When you have a list, import it here. Name and phone are the only required columns." },
   ],
   templates: [
-    { sel: "[data-tour='new']",    title: "Templates are the message", body: "WhatsApp requires businesses to use an approved template to start a conversation. We've drafted one for your industry." },
-    { sel: "[data-tour='status']", title: "Meta approves them",        body: "Approval usually takes minutes to a few hours. You'll be told the moment it's live." },
+    { sel: "[data-tour='new']",    title: "Templates are the message", body: "WhatsApp requires a Meta-approved template to start a conversation, or to message after 24h of silence. Start from a draft — it's already written for your industry." },
+    { sel: "[data-tour='status']", title: "Meta reviews every template", body: "Minutes to a few hours. If it's rejected you'll see the reason and the fix right here — and you can resubmit." },
+  ],
+  numbers: [
+    { sel: "[data-tour='waba']",   title: "Your WhatsApp Business Account", body: "Meta's container for your numbers, templates and limits. Business verification lives here." },
+    { sel: "[data-tour='verify']", title: "Verify to lift the 250/day cap", body: "One legal document. Until Meta verifies you, you can start 250 customer conversations a day." },
+    { sel: "[data-tour='limits']", title: "Limits grow with quality",      body: "Send at volume with a green quality rating and Meta raises the tier automatically." },
+    { sel: "[data-tour='number']", title: "Each number has its own status", body: "Display-name review, quality rating, two-step PIN and the business profile customers see." },
   ],
   broadcasts: [
     { sel: "[data-tour='audience']", title: "Pick your audience",            body: "Everyone, or a saved segment. Start small." },
@@ -124,6 +132,7 @@ window.BEACONS = {
   home:       [{ id: "home-number", sel: "[data-beacon='number']", text: "When you're ready to message real customers, connect your own number here." }],
   broadcasts: [{ id: "bc-test",     sel: "[data-tour='test']",     text: "Send yourself a test before the real thing." }],
   templates:  [{ id: "tp-new",      sel: "[data-tour='new']",      text: "Start here — the draft is already written." }],
+  numbers:    [{ id: "nm-verify",   sel: "[data-tour='verify']",   text: "Verify your business to lift the 250/day limit." }],
   api:        [{ id: "api-webhook", sel: "[data-tour='webhook']",  text: "Set a webhook to receive replies." }],
   inbox:      [{ id: "in-invite",   sel: "[data-tour='invite']",   text: "Invite a teammate." }],
   bots:       [{ id: "bot-publish", sel: "[data-tour='publish']",  text: "Publish when you've tested it." }],
@@ -134,6 +143,36 @@ window.BEACONS = {
    priority: lower = more important. once: fire only once ever. page: only on this page (optional).
    cta.action is an app.js action id. */
 window.NUDGES = [
+  { id: "name-rejected", priority: 1, once: false,
+    when: s => s.numbers.some(n => n.displayNameStatus === "rejected"),
+    title: "Meta rejected your display name",
+    body: s => `${(s.numbers.find(n => n.displayNameStatus === "rejected") || {}).displayNameReason || "It doesn't match your business."} Pick a new one — messages still send meanwhile.`,
+    cta: { label: "Change name", action: "nav", page: "numbers" } },
+
+  { id: "template-rejected", priority: 1, once: false,
+    when: s => s.templates.some(t => t.status === "rejected"),
+    title: "A template was rejected",
+    body: s => { const t = s.templates.find(x => x.status === "rejected"); return `“${t.name}”: ${(t.rejectionReason || "").split(":")[0]}. Fix: ${WA.fixFor(t.rejectionReason)}`; },
+    cta: { label: "Edit & resubmit", action: "nav", page: "templates" } },
+
+  { id: "template-recategorised", priority: 3, once: true,
+    when: s => s.templates.some(t => t.categoryChangedFrom),
+    title: "Meta changed a template's category",
+    body: s => { const t = s.templates.find(x => x.categoryChangedFrom); return `“${t.name}” was submitted as ${t.categoryChangedFrom} but approved as ${t.category} — it'll be billed at the ${t.category.toLowerCase()} rate.`; },
+    cta: { label: "See template", action: "nav", page: "templates" } },
+
+  { id: "verify-business", priority: 3, once: false,
+    when: s => !!s.waba && s.waba.businessVerification === "unverified" && s.meta.status === "live",
+    title: "You're capped at 250 conversations/day",
+    body: () => "Business verification lifts it to 1,000 and unlocks the green tick. One document, 1–3 days.",
+    cta: { label: "Verify business", action: "nav", page: "numbers" }, alt: { label: "Later" } },
+
+  { id: "quality-drop", priority: 1, once: false,
+    when: s => s.numbers.some(n => n.quality === "yellow" || n.quality === "red"),
+    title: "Quality rating dropped",
+    body: () => "Customers are blocking or reporting messages. Pause marketing sends, check opt-ins, add an opt-out. 7 days of low quality lowers your limit.",
+    cta: { label: "See number", action: "nav", page: "numbers" } },
+
   { id: "number-live", priority: 1, once: true,
     when: s => s.meta.status === "live" && !s.broadcasts.some(b => !b.test),
     title: "🎉 Your number is live",
