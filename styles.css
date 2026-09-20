@@ -334,6 +334,7 @@ label { display: block; font-size: 13px; font-weight: 500; color: var(--ink-2); 
 /* ---------- guidance layer ---------- */
 #guide-layer { position: fixed; inset: 0; pointer-events: none; z-index: 100; }
 #guide-layer > * { pointer-events: auto; }
+#guide-layer > .tour-spot { pointer-events: none; } /* the spotlight must never block the element it highlights */
 .launcher { position: fixed; right: 22px; bottom: 22px; display: flex; align-items: center; gap: 10px; background: var(--ink); color: var(--bg); border: none; border-radius: 999px; padding: 8px 16px 8px 8px; box-shadow: var(--shadow-lg); font-weight: 500; font-size: 14px; }
 .launcher .ring { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-family: var(--font-mono); background: conic-gradient(var(--accent) var(--p, 0%), rgba(255,255,255,.15) 0); position: relative; }
 .launcher .ring::before { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--ink); }

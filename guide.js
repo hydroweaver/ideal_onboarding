@@ -70,8 +70,10 @@ window.Guide = (function () {
   }
 
   /* ---------- journeys / launcher ---------- */
+  function bind(state) { S = state; }
   function plan() {
     const out = [];
+    if (!S) return out;
     for (const key of S.jtbd) {
       const j = window.JOURNEYS[key]; if (!j) continue;
       j.steps.forEach(st => out.push({ ...st, journey: key, jlabel: j.label, isDone: st.done(S) }));
@@ -93,7 +95,7 @@ window.Guide = (function () {
     const inApp = S.screen === "app";
     el.innerHTML = inApp ? `<span class="ring" style="--p:${pct}%"><span>${done}/${p.length}</span></span><span>${S.tipsOff ? "Assistant" : "Your plan"}</span>` : `<span class="ring" style="--p:0%"><span>R</span></span><span>Need a hand?</span>`;
     el.classList.toggle("idle", !!R.idle && !S.tipsOff);
-    if (R.panelOpen) renderPanel();
+    if (R.panelOpen && R.tab === "plan") renderPanel(); // assistant tab owns its DOM — rebuilding it would wipe what the person is typing
   }
   function togglePanel() {
     R.panelOpen = !R.panelOpen;
@@ -277,5 +279,5 @@ window.Guide = (function () {
     layer().querySelectorAll(keepLauncher ? ".tour-spot,.tour-tip,.nudge,.beacon,.beacon-pop,.toast" : "*").forEach(n => n.remove());
   }
 
-  return { tick, toast, startTour, plan, next, status, held: () => R.held, resetRuntime: () => clearAll(false) };
+  return { bind, tick, toast, startTour, plan, next, status, held: () => R.held, resetRuntime: () => clearAll(false) };
 })();

@@ -63,6 +63,16 @@ test("state survives reload on a wizard screen", async ({ page }) => {
   await expect(page.locator(".keybox")).toBeVisible();
 });
 
+test("reload inside the app (every page) renders without errors", async ({ page }) => {
+  await act(page, "jumpApp");
+  for (const pg of ["home", "templates", "numbers", "broadcasts", "contacts", "bots", "inbox", "api", "settings"]) {
+    await page.evaluate((pg) => window.App.nav(pg), pg);
+    await page.reload();
+    await page.waitForFunction(() => window.App && document.getElementById("root").children.length > 0);
+    await expect(page.locator(".sidenav"), `sidenav after reload on ${pg}`).toBeVisible();
+  }
+});
+
 test("Embedded Signup: display-name rules enforced live, finish creates WABA + number", async ({ page }) => {
   await act(page, "jumpApp"); await act(page, "openNumber");
   for (const k of ["notOnWa", "bm", "doc"]) await page.locator(`[data-action=checkItem][data-key=${k}]`).click();

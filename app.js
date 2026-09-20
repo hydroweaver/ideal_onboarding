@@ -285,10 +285,12 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
         ${S.contacts.length ? `<div class="panel"><table class="table"><thead><tr><th>Name</th><th>Phone</th><th>Source</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="panel empty"><div class="big">👥</div><h3>No contacts yet</h3><p>Paste a number above — your own is the best first one, so you see exactly what customers will.</p></div>`}`);
     },
     broadcasts() {
-      const approved = S.templates.filter(t => t.status === "approved"); const pending = S.templates.filter(t => t.status === "pending");
+      const approved = S.templates.filter(t => t.status === "approved"); const pending = S.templates.filter(t => t.status === "pending"); const rejected = S.templates.filter(t => t.status === "rejected");
       const banner = !S.contacts.length ? `<div class="inline-banner">You need contacts before you can broadcast. <button class="btn guide sm" data-action="nav" data-page="contacts">Add contacts</button></div>`
         : !S.templates.length ? `<div class="inline-banner">You need a template first — the draft is already written. <button class="btn guide sm" data-action="nav" data-page="templates">Create template</button></div>`
-        : !approved.length ? `<div class="inline-banner">“${esc(pending[0].name)}” is with Meta for approval. You'll get a nudge the moment it's approved. <button class="btn guide sm" data-action="approveTemplate" data-name="${esc(pending[0].name)}">Prototype: approve now</button></div>` : "";
+        : !approved.length && pending.length ? `<div class="inline-banner">“${esc(pending[0].name)}” is with Meta for approval. You'll get a nudge the moment it's approved. <button class="btn guide sm" data-action="approveTemplate" data-name="${esc(pending[0].name)}">Prototype: approve now</button></div>`
+        : !approved.length && rejected.length ? `<div class="inline-banner">Meta rejected “${esc(rejected[0].name)}”. Fix it and resubmit — takes a minute. <button class="btn guide sm" data-action="nav" data-page="templates">Fix template</button></div>`
+        : !approved.length ? `<div class="inline-banner">Your template is still a draft — submit it to Meta so you can send. <button class="btn guide sm" data-action="nav" data-page="templates">Open templates</button></div>` : "";
       const rows = S.broadcasts.map(b => `<tr><td>${esc(b.template)}</td><td>${b.test ? "Test · you" : `${b.count} contacts`}</td><td><span class="pill ok">delivered</span></td><td class="tabular muted">${b.read} read</td></tr>`).join("");
       return appShell(`
         <div class="ph"><div><h1>Broadcasts</h1><p>One template, many people, delivered and read counts as they happen.</p></div>${tourBtn()}</div>
@@ -415,6 +417,7 @@ Rules: outside the 24h window you MUST use an approved template. Sandbox can onl
   /* ================= RENDER ================= */
   function render() {
     Object.assign(S.meta, WA.summarizeMeta(S));
+    Guide.bind(S); // pages call Guide.next()/plan() while rendering, so the guide must know the state first
     const root = document.getElementById("root");
     if (S.mode === "agent") root.innerHTML = renderAgent();
     else if (S.screen === "app") root.innerHTML = pages[S.page] ? pages[S.page]() : pages.home();
