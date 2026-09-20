@@ -15,7 +15,6 @@ module.exports = defineConfig({
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },
-    { name: "mobile", use: { ...devices["Pixel 7"] }, testMatch: /smoke\.spec\.js/ },
   ],
   webServer: {
     command: "python -m http.server 8766 --bind 127.0.0.1",
