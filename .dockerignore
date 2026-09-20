@@ -1,0 +1,4 @@
+.git
+*.md
+!SPEC.md
+!README.md
