@@ -1,0 +1,26 @@
+{
+  "name": "relay-onboarding",
+  "version": "1.0.0",
+  "description": "A clickable prototype of a calm, self-guided onboarding for a WhatsApp CPaaS (Heltar-like): sandbox-first wizard, a job-driven \"Your plan\" home, budgeted WalkMe-style guidance, and an in-app assistant that does the work through the same tool surface an external agent uses.",
+  "scripts": {
+    "start": "python -m http.server 8765 --bind 127.0.0.1",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hydroweaver/ideal_onboarding.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/hydroweaver/ideal_onboarding/issues"
+  },
+  "homepage": "https://github.com/hydroweaver/ideal_onboarding#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  },
+  "private": true
+}
