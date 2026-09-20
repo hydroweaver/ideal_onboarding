@@ -2,7 +2,9 @@
 
 A clickable prototype of a calm, self-guided onboarding for a WhatsApp CPaaS (Heltar-like): sandbox-first wizard, a job-driven "Your plan" home, budgeted WalkMe-style guidance, and an in-app assistant that does the work through the same tool surface an external agent uses.
 
-**Design rationale and flow:** [SPEC.md](SPEC.md)
+**Live:** https://relay-onboarding-production.up.railway.app · **Repo:** https://github.com/hydroweaver/ideal_onboarding · **Design rationale and flow:** [SPEC.md](SPEC.md)
+
+Deploys automatically from `main` via Railway (nginx, see `Dockerfile`). Open a PR for changes; merge = deploy.
 
 ## Run it
 
